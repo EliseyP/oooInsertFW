@@ -29,7 +29,7 @@ Libre Office расширение для текстов с церковно-сл
 **Панель**  
 
 На панели доступны кнопки вставки, удаления и обновления врезок с первым словом.     
-![Вставка](/Images/FW_16.png) &nbsp;&nbsp; ![Удаление](/Images/FWRem_16.png) &nbsp;&nbsp; ![Обновление](/Images/FWUpd_16.png) 
+![Вставка](src/Images/FW_16.png) &nbsp;&nbsp; ![Удаление](src/Images/FWRem_16.png) &nbsp;&nbsp; ![Обновление](src/Images/FWUpd_16.png) 
      
  
 
