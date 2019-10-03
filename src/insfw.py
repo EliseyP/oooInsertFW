@@ -82,7 +82,8 @@ def insert_frames_to_pages():
     # Получить список курсоров с первыми словами
     # 0-й элемент - первое слово 2-й страницы
     # последний - первое слово последней страницы
-    a = init_fw_array()
+    # a = init_fw_array()
+    a = [get_fw_from(page) for page in range(2, n_pages + 1)]
     if not a:
         return None
 
@@ -103,13 +104,13 @@ def insert_frames_to_pages():
         return None
 
 
-def init_fw_array():
-    """Возвращает список курсоров (для сохранения формата) с первыми словами каждой страницы, начиная со второй.
-
-    :return:
-    """
-    pages_in_doc = doc.getCurrentController().PageCount
-    return [get_fw_from(page) for page in range(2, pages_in_doc + 1)]
+# def init_fw_array():
+#     """Возвращает список курсоров (для сохранения формата) с первыми словами каждой страницы, начиная со второй.
+#
+#     :return:
+#     """
+#     pages_in_doc = doc.getCurrentController().PageCount
+#     return [get_fw_from(page) for page in range(2, pages_in_doc + 1)]
 
 
 def bound_handler(string: str, bound_type='') -> int:
