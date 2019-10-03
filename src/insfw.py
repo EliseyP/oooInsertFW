@@ -1,12 +1,12 @@
 # -*- coding: utf_8 -*-
 """
-Вставка внизу страницы первого слова со следующей страницы. Слово вставляется во врезку.
+Вставка внизу страницы (во врезку) первого слова со следующей страницы.
 Если за словом неразрывный пробел, то первых двух.
 Начальные и конечные пробелы и знаки препинания (кроме конечной точки) удаляются.
 Сохраняется некоторое форматирование (цвет, и в случае стиля для ч/б печати - жирность)
-Настроенный стиль врезки (frame_style_name) предполагается в наличии,
-но если его нет то он создается автоматически. Далее его можно настроить под свои нужды.
-Также неплохо настроить и стиль абзаца "Содержимое врезки".
+Настроенные стили: врезки и содержимого врезки (абзацный) предполагается в наличии,
+при отсутствии создаются автоматически, и отчасти настраиваются.
+Далее их можно настроить под свои нужды.
 
 Запускается из LOffice для открытого документа.
 """
@@ -14,14 +14,20 @@
 import uno
 # import unohelper
 from screen_io import MsgBox, InputBox, Print
+# from com.sun.star.lang import IndexOutOfBoundsException
 
-frame_style_name = "ВрезкаСловоСледСтр"  # настроенный cтиль врезки
+frame_prefix = "FWFrame_"
+# настроенный cтиль врезки
+frame_style_name = "ВрезкаСловоСледСтр"
+# настроенный абзацный cтиль для содержимого врезки
+frame_paragaph_style_name = "Содержимое врезки ПервоеСловоСледСтр"
+# стиль символов
 char_style_name = "киноварь"
+
 
 context = XSCRIPTCONTEXT
 desktop = context.getDesktop()
 doc = desktop.getCurrentComponent()
-
 
 style_families = doc.getStyleFamilies()
 char_styles = style_families.getByName("CharacterStyles")
@@ -53,7 +59,7 @@ def insert_fw_to_doc(*args):
 
     """
     # Если нет стиля врезки, создать.
-    check_and_create_frame_style()
+    check_and_create_styles()
 
     # Сохранить положение видимого курсора.
     view_data = save_pos()
@@ -81,7 +87,7 @@ def insert_frames_to_pages():
         return None
 
     try:
-        # для всех станиц, кроме последней
+        # для всех страниц, кроме последней
         for page in range(1, n_pages):
             fw_cursor = a[page - 1]  # курсор с первым словом след-й сраницы
             frame = create_frame_on(page)  # создать (или получить имеющуюся) врезку
@@ -98,19 +104,12 @@ def insert_frames_to_pages():
 
 
 def init_fw_array():
-    """Возвращает список курсоров (для сохранения формата) с первыми словами каждой страницы.
+    """Возвращает список курсоров (для сохранения формата) с первыми словами каждой страницы, начиная со второй.
 
-    :return: list
+    :return:
     """
     pages_in_doc = doc.getCurrentController().PageCount
-    if pages_in_doc == 1:
-        return None
-    a = []
-    # начиная со второй страницы
-    for page in range(2, pages_in_doc + 1):
-        # добавить полученный курсор c первым словом
-        a.append(get_fw_from(page))
-    return a
+    return [get_fw_from(page) for page in range(2, pages_in_doc + 1)]
 
 
 def bound_handler(string: str, bound_type='') -> int:
@@ -140,16 +139,13 @@ def bound_handler(string: str, bound_type='') -> int:
     nextwd_bound = brk.nextWord(string, mystartpos, a_locale, DICTIONARY_WORD)
     firstwd_bound = brk.previousWord(string, nextwd_bound.startPos, a_locale, DICTIONARY_WORD)
 
-    if bound_type == 'start':
-        return firstwd_bound.startPos
-    elif bound_type == 'end':
-        return firstwd_bound.endPos
-    elif bound_type == 'next_start':
-        return nextwd_bound.startPos
-    elif bound_type == 'next_end':
-        return nextwd_bound.endPos
-    else:
-        return -1
+    bound_dic = {'start': firstwd_bound.startPos,
+                 'end': firstwd_bound.endPos,
+                 'next_start': nextwd_bound.startPos,
+                 'next_end': nextwd_bound.endPos
+                 }
+
+    return bound_dic.get(bound_type, -1)
 
 
 def get_bound_start_pos(string: str) -> int:
@@ -231,10 +227,11 @@ def get_fw_from(page: int):
         capture_end = bound_end  # верняя позиция для захвата курсором
         add_shift = 0  # добавочный сдвиг для случая с неразр.пробелом
         if prefix and prefix[-1] == '҂':
-            out_cursor.goLeft(1, False)  # сместиться на 1 символ влево
-            capture_end += 1  # скорректировать позиции захвата
+            # скорректировать позиции захвата
+            out_cursor.goLeft(1, False)
+            capture_end += 1
             add_shift += 1
-        out_cursor.collapseToStart()  # начальная позиция захвата
+        out_cursor.collapseToStart()  # -> в начальную позицию захвата
 
         # В случае с неразравным пробелом
         if first_string.count('\xA0') and first_string[-1] != " ":
@@ -257,14 +254,13 @@ def get_fw_from(page: int):
 def create_frame_on(page: int):
     """Возвращает либо имеющуюся, либо новосозданную врезку на странице.
 
-    Врезка именуется "TxtFrame_N" N - номер страницы.
+    Врезка именуется "frame_prefix_N" N - номер страницы.
 
     :param page: Номер страницы.
     :return: врезка на странице.
     """
-    from com.sun.star.text.TextContentAnchorType import AT_PAGE
     view_cursor = doc.getCurrentController().getViewCursor()
-    frame_name = "TxtFrame_" + str(page)
+    frame_name = frame_prefix + str(page)
 
     # проверка на сущ-е фрейма
     frames_in_doc = doc.getTextFrames()
@@ -273,7 +269,7 @@ def create_frame_on(page: int):
     else:
         # создание фрейма, если его нет
         frame = doc.createInstance("com.sun.star.text.TextFrame")
-        frame.AnchorType = AT_PAGE  # тип привязки
+        frame.AnchorType = 2  # тип привязки
         frame.FrameStyleName = frame_style_name  # настроенный стиль
         frame.Name = frame_name
         frame.WidthType = 2  # 2 - auto-width
@@ -302,6 +298,8 @@ def fill_frame(frame, fw_cursor):
 
     # временный курсор -> во врезку
     tmp_cursor = frame.createTextCursorByRange(frame.getStart())
+    # применить абзацный стиль для содержимого врезки
+    tmp_cursor.ParaStyleName = frame_paragaph_style_name
 
     # Структура для сохранения форматирования
     char_props = (
@@ -335,35 +333,76 @@ def fill_frame(frame, fw_cursor):
     return None
 
 
-def check_and_create_frame_style():
+def check_and_create_styles():
     """
-    Проверка, если нет стиля для врезки, создает его
-    далее этот стиль можно настроить под свои нужды
+    Проверка, если нет стиля врезки, и для его содержимого, создает их.
+    Далее эти стили можно настроить под свои нужды
 
     """
-    _style_families = doc.getStyleFamilies()
-    frame_styles = _style_families.getByName("FrameStyles")
+
+    # _style_families = doc.getStyleFamilies()
+    frame_styles = style_families.getByName("FrameStyles")
+    para_styles = style_families.getByName("ParagraphStyles")
+
     # Проверка, если нет стиля для врезки, создать
     if not frame_styles.hasByName(frame_style_name):
-        Print("Нет стиля " + frame_style_name + ", создаем.")
+        MsgBox(f'Нет настроенного стиля врезки. Создаем.')
         new_frame_style = doc.createInstance("com.sun.star.style.FrameStyle")
         new_frame_style.setName(frame_style_name)
+        new_frame_style.AnchorType = 2  # AT_PAGE
+        new_frame_style.BorderDistance = 0
+        new_frame_style.BottomBorderDistance = 0
+        new_frame_style.BottomMargin = 1300
+        new_frame_style.HoriOrient = 1
+        new_frame_style.HoriOrientRelation = 8
+        new_frame_style.IsFollowingTextFlow = 'True'
+        new_frame_style.LeftBorderDistance = 0
+        new_frame_style.LeftMargin = 0
+        new_frame_style.PositionProtected = 'True'  # ????
+        new_frame_style.RightBorderDistance = 0
+        new_frame_style.RightMargin = 0
+        new_frame_style.Surround = 1  # PARALLEL
+        new_frame_style.TextVerticalAdjust = 1  # TOP
+        new_frame_style.TextWrap = 1  # PARALLEL
+        new_frame_style.TopBorderDistance = 0
+        new_frame_style.VertOrient = 3
+        new_frame_style.VertOrientRelation = 7
+        new_frame_style.WidthType = 2
+
         frame_styles.insertByName(frame_style_name, new_frame_style)
+        if frame_styles.hasByName(frame_style_name):
+            frame_styles.getByName(frame_style_name).ParentStyle = 'Frame'
+            MsgBox(f'Cтиль врезки:\n"{frame_style_name}"\nсоздан.')
+
+    # Проверка, если нет стиля для содержимого врезки, создать
+    if not para_styles.hasByName(frame_paragaph_style_name):
+        new_para_style = doc.createInstance("com.sun.star.style.ParagraphStyle")
+
+        new_para_style.setName(frame_paragaph_style_name)
+        new_para_style.ParaAdjust = 1
+        new_para_style.CharNoHyphenation = 'True'
+        # new_para_style.ParaHyphenationMaxHyphens = 3
+        # new_para_style.ParaHyphenationMaxLeadingChars = 4
+        # new_para_style.ParaHyphenationMaxTrailingChars = 4
+        new_para_style.ParaOrphans = 0
+        new_para_style.ParaWidows = 0
+
+        para_styles.insertByName(frame_paragaph_style_name, new_para_style)
+
+        if para_styles.hasByName(frame_paragaph_style_name):
+            para_styles.getByName(frame_paragaph_style_name).ParentStyle = "Frame contents"
+            MsgBox(f'Cтиль абзаца для содержимого врезки:\n"{frame_paragaph_style_name}"\nсоздан.')
 
 
 def remove_first_words_frames():
     # Удаляет все врезки созданные для первого слова
 
     all_frames = doc.getTextFrames()
-    n_pages = doc.getCurrentController().PageCount
-
-    # для каждой страницы кроме последней
-    # удалить все врезки вида "TxtFrame_page"
-    for page in range(1, n_pages):
-        frame_name = "TxtFrame_" + str(page)
-        # если есть врезка, удалить ее
-        if all_frames.hasByName(frame_name):
-            all_frames.getByName(frame_name).dispose()
+    frame_names = all_frames.getElementNames()
+    for name in frame_names:
+        # удалить все врезки вида "frame_prefix_page"
+        if name.startswith(frame_prefix):
+            all_frames.getByName(name).dispose()
 
 
 def save_pos():
