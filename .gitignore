@@ -1,3 +1,5 @@
 /.idea/
 /venv/
 /src/.~lock.OOfword.odt#
+.gitignore
+
