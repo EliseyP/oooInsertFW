@@ -143,6 +143,9 @@ def get_cursors_with_page_by(pages_positions):
             text_cursor = doc.Text.createTextCursorByRange(start)
             text_cursor.gotoRange(start, False)
             text_cursor.gotoRange(end, True)
+            # TODO: м.б. полученный текст тут же и обработать?
+            #  (Чтобы не гонять все страницы по спискам)
+
             out.append(text_cursor)
         else:
             out.append(None)
@@ -151,7 +154,9 @@ def get_cursors_with_page_by(pages_positions):
 
 def get_fist_word_from(cursors):
     """
-    Из каждой страницы выбирает первое слово (или два)
+    Из каждого курсора с текстом страницы выбирает первое слово (или два)
+    TODO: ? нужно ли передавать текст в курсорах? м.б. удобнее обычным текстом?
+      либо для ускорения обрабатывать текст на месте, извлекая из него первое слово?
 
     :param cursors:
     :return: список курсоров с текстом (или пустой)
