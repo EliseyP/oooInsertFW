@@ -105,7 +105,7 @@ def insert_frames_to_pages():
     cursors_with_fword = get_fw_cursors(pages_positions)
 
     # Врезки с первой по предпоследнюю страницу,
-    frames = get_or_create_frames_in_doc()
+    frames = make_all_frames_in(pages_positions)
 
     if not cursors_with_fword or not frames:
         return None
@@ -120,27 +120,37 @@ def insert_frames_to_pages():
             fill_frame(frame, cursor)  # занести слово во врезку
 
 
-def get_or_create_frames_in_doc():
-    out = []
-    # для всех страниц, кроме последней
-    for page in range(1, n_pages):
-        frame = create_frame_on(page)  # создать (или получить имеющуюся) врезку
-        if frame:
-            out.append(frame)
-        else:
-            out.append(None)
+def make_all_frames_in(pages_positions):
+    """Создать (или получить имеющиеся) врезки
 
-    return out
+    :param pages_positions: список кортежей позиций начала и конца страницы
+    :return: список врезок
+    """
+    out_frames = []
+    # для всех концов страниц (кроме последней),
+    page = 0
+    for _, end in pages_positions:
+        page += 1
+        frame = make_frame_in_position(page, end)  # создать (или получить имеющуюся) врезку
+        if frame:
+            out_frames.append(frame)
+        else:
+            out_frames.append(None)
+
+    return out_frames
 
 
 def get_fw_cursors(pages_positions):
     out = []
     for start, end in pages_positions:
         comparing = doc.Text.compareRegionStarts(start, end)
+        # Если страница не пуста
         if comparing:
+            # захватить в курсор весь текст
             text_cursor = doc.Text.createTextCursorByRange(start)
             text_cursor.gotoRange(start, False)
             text_cursor.gotoRange(end, True)
+            # получить из этого курсора другой, с первым словом
             fw_cursor = get_fist_word_from_one(text_cursor)
             if fw_cursor:
                 out.append(fw_cursor)
@@ -236,8 +246,8 @@ def get_fist_word_from_one(cursor):
                 out_cursor.goRight(capture_amount, True)  # захват
 
     else:
-        # Не нашлось слова, но заносим None
-        # для соответствия врезкам и страницам
+        # Не нашлось слова, но возвращаем None
+        # для соответствия по кол-ву и порядку врезкам и страницам
         out_cursor = None
 
     return out_cursor
@@ -319,17 +329,15 @@ def get_next_bound_end_pos(string, pos=0) -> int:
     return bound_handler(string, 'next_end', pos)
 
 
-def create_frame_on(page: int):
-    """Возвращает либо имеющуюся, либо новосозданную врезку на странице.
+def make_frame_in_position(page, end_of_page):
+    """Возвращает либо имеющуюся, либо новосозданную врезку в позиции конца страницы.
 
-    Врезка именуется "frame_prefix_N" N - номер страницы.
-
-    :param page: Номер страницы.
-    :return: врезка на странице.
+    :param page: номер страницы
+    :param end_of_page: позиция конца страницы (TextRange)
+    :return: врезка (TextFrame)
     """
-    view_cursor = doc.getCurrentController().getViewCursor()
-    frame_name = frame_prefix + str(page)
 
+    frame_name = frame_prefix + str(page)
     # проверка на сущ-е фрейма
     frames_in_doc = doc.getTextFrames()
     if frames_in_doc.hasByName(frame_name):
@@ -345,11 +353,12 @@ def create_frame_on(page: int):
         # Решает проблему многостраничного абзаца, когда все врезки на этих страницах
         # помещаются на страницу начала такого абзаца.
 
-        # вставка фрейма в позицию курсора
-        view_cursor.jumpToPage(page)
-        doc.Text.insertTextContent(view_cursor, frame, 'false')
-
-        return frame
+        # вставка фрейма в позицию конца страницы
+        doc.Text.insertTextContent(end_of_page, frame, 'false')
+        if frames_in_doc.hasByName(frame_name):
+            return frame
+        else:
+            return None
 
 
 def fill_frame(frame, fw_cursor):
