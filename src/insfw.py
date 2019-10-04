@@ -1,7 +1,7 @@
 # -*- coding: utf_8 -*-
 """
 Вставка внизу страницы (во врезку) первого слова со следующей страницы.
-Если за словом неразрывный пробел, то первых двух.
+Если за словом неразрывный пробел (или нечто подобное), то первых двух.
 Начальные и конечные пробелы и знаки препинания (кроме конечной точки) удаляются.
 Сохраняется некоторое форматирование (цвет, и в случае стиля для ч/б печати - жирность)
 Настроенные стили: врезки и содержимого врезки (абзацный) предполагается в наличии,
@@ -75,9 +75,9 @@ def update_all(*args):
 
 
 def insert_fw_to_doc(*args):
-    """
-    В конце каждой страницы вставляет первое слово след-й страницы
+    """В конце каждой страницы вставляет первое слово след-й страницы
 
+    :return
     """
     # Если нет стиля врезки, создать.
     check_and_create_styles()
@@ -105,7 +105,7 @@ def insert_frames_to_pages():
     cursors_with_fword = get_fw_cursors(pages_positions)
 
     # Врезки с первой по предпоследнюю страницу,
-    frames = create_frames_in_doc()
+    frames = get_or_create_frames_in_doc()
 
     if not cursors_with_fword or not frames:
         return None
@@ -120,7 +120,7 @@ def insert_frames_to_pages():
             fill_frame(frame, cursor)  # занести слово во врезку
 
 
-def create_frames_in_doc():
+def get_or_create_frames_in_doc():
     out = []
     # для всех страниц, кроме последней
     for page in range(1, n_pages):
