@@ -12,6 +12,7 @@
 """
 
 import uno
+import re
 # import unohelper
 from screen_io import MsgBox, InputBox, Print
 # from com.sun.star.lang import IndexOutOfBoundsException
@@ -23,11 +24,12 @@ frame_style_name = "ВрезкаСловоСледСтр"
 frame_paragaph_style_name = "Содержимое врезки ПервоеСловоСледСтр"
 # стиль символов
 char_style_name = "киноварь"
-
+THOUSAND = '҂'
 
 context = XSCRIPTCONTEXT
 desktop = context.getDesktop()
 doc = desktop.getCurrentComponent()
+n_pages = doc.getCurrentController().PageCount
 
 style_families = doc.getStyleFamilies()
 char_styles = style_families.getByName("CharacterStyles")
@@ -38,6 +40,25 @@ if char_styles.hasByName(char_style_name):
     kinovar_color = char_styles.getByName(char_style_name).CharColor
 else:
     kinovar_color = 0
+
+
+def Mri_test():
+    ctx = context.getComponentContext()
+    document = context.getDocument()
+    mri(ctx, document)
+
+
+def Mri(target):
+    ctx = context.getComponentContext()
+    mri = ctx.ServiceManager.createInstanceWithContext(
+        "mytools.Mri", ctx)
+    mri.inspect(target)
+
+
+def mri(ctx, target):
+    mri = ctx.ServiceManager.createInstanceWithContext(
+        "mytools.Mri",ctx)
+    mri.inspect(target)
 
 
 def remove_all(*args):
@@ -74,46 +95,173 @@ def insert_frames_to_pages():
 
     NOTE: м.б. заполнить отдельно?
     """
-    n_pages = doc.getCurrentController().PageCount
+    # n_pages = doc.getCurrentController().PageCount
 
     if n_pages == 1:
         return None
 
-    # Получить список курсоров с первыми словами
-    # 0-й элемент - первое слово 2-й страницы
-    # последний - первое слово последней страницы
-    # a = init_fw_array()
-    a = [get_fw_from(page) for page in range(2, n_pages + 1)]
-    if not a:
+    # позиции начала и конца каждой страницы (кроме первой)
+    pages_positions = [get_start_end_positions_of(page) for page in range(2, n_pages + 1)]
+    # Список курсоров с текстом страницы
+    cursors_with_whole_page_text = get_cursors_with_page_by(pages_positions)
+    # Список курсоров с первыми словами для всех страниц, кроме первой
+    cursors_with_fword = get_fist_word_from(cursors_with_whole_page_text)
+    # Врезки с первой по предпоследнюю страницу,
+    frames = create_frames_in_doc()
+
+    if not cursors_with_fword or not frames:
         return None
 
-    try:
-        # для всех страниц, кроме последней
-        for page in range(1, n_pages):
-            fw_cursor = a[page - 1]  # курсор с первым словом след-й сраницы
-            frame = create_frame_on(page)  # создать (или получить имеющуюся) врезку
-            # Если есть врезка и есть слово на след-й странице и оно изменилось,
-            if frame and fw_cursor and fw_cursor.getString() != frame.getString():
-                fill_frame(frame, fw_cursor)  # занести слово во врезку
-                # Если отличие ТОЛЬКО в тексте, то при различии в оформлении (цвет),
-                # необходимо вручную удалить и создать заново,
-                # (или, что то же, макросом полного обновления всех врезок)
-
-    except IndexError:
-        Print("Index Error!")
+    # кол-во врезок и курсоров должно совпадать с n-1 страниц в док-те.
+    if not (n_pages-1 == len(frames) == len(cursors_with_fword)):
         return None
 
-
-# def init_fw_array():
-#     """Возвращает список курсоров (для сохранения формата) с первыми словами каждой страницы, начиная со второй.
-#
-#     :return:
-#     """
-#     pages_in_doc = doc.getCurrentController().PageCount
-#     return [get_fw_from(page) for page in range(2, pages_in_doc + 1)]
+    for frame, cursor in zip(frames, cursors_with_fword):
+        # Если есть последнее слово и врезка
+        if frame and cursor:  # and frame.String != cursor.String:
+            fill_frame(frame, cursor)  # занести слово во врезку
 
 
-def bound_handler(string: str, bound_type='') -> int:
+def create_frames_in_doc():
+    out = []
+    # для всех страниц, кроме последней
+    for page in range(1, n_pages):
+        frame = create_frame_on(page)  # создать (или получить имеющуюся) врезку
+        if frame:
+            out.append(frame)
+        else:
+            out.append(None)
+
+    return out
+
+
+def get_cursors_with_page_by(pages_positions):
+    out = []
+    for start, end in pages_positions:
+        comparing = doc.Text.compareRegionStarts(start, end)
+        if comparing:
+            text_cursor = doc.Text.createTextCursorByRange(start)
+            text_cursor.gotoRange(start, False)
+            text_cursor.gotoRange(end, True)
+            out.append(text_cursor)
+        else:
+            out.append(None)
+    return out
+
+
+def get_fist_word_from(cursors):
+    """
+    Из каждой страницы выбирает первое слово (или два)
+
+    :param cursors:
+    :return: список курсоров с текстом (или пустой)
+    """
+    out = []
+    for cursor in cursors:
+        if cursor:
+            # Текстовый курсор, который захватит слово с форматом.
+            out_cursor = doc.Text.createTextCursorByRange(cursor.getStart())
+            page_text = cursor.getString()  # текст всей страницы.
+
+            # Если страница без текста, но с пробелами и пустыми строками,
+            # то это предохранит от лишних движений и возможно ошибок.
+            page_text = re.sub(r'^\s*$', '', page_text)
+            # page_text = re.sub(r'^\s+', '', page_text)
+
+            start_sentence_pos = bound_handler(page_text, 'start_sentence')
+            # Если нашлось предложение (не факт, что далее будет именно слово)
+            if start_sentence_pos >= 0:
+                # Двигаться по тексту, пока не найдется конец слова (первого)
+                first_word_start_pos = -1
+                first_word_end_pos = -1
+                second_word_start_pos = -1
+                tmp_position = start_sentence_pos
+                i = 0
+                while first_word_end_pos == -1:
+                    i += 1
+                    first_word_end_pos = get_bound_end_pos(page_text, tmp_position)
+                    first_word_start_pos = get_bound_start_pos(page_text, tmp_position)
+                    second_word_start_pos = get_next_bound_start_pos(page_text, tmp_position)
+                    start_sentence_pos = bound_handler(page_text, 'start_sentence', tmp_position)
+                    tmp_position = second_word_start_pos
+
+                    # MsgBox(
+                    #     f'Шаг {i}. tmp: {tmp_position}\nsentence: {start_sentence_pos}\n'
+                    #     f'1-е слово: [{first_word_start_pos}:{first_word_end_pos}] '
+                    #     f'|{page_text[first_word_start_pos:first_word_end_pos]}|\n'
+                    #     f'2-е слово: [{second_word_start_pos}:]\n'
+                    #     # f'tmp_sent = {tmp_sent}'
+                    # )
+
+                    # Если нет приемлемого текста, но страница не совсем пуста.
+                    if (
+                            second_word_start_pos > 0
+                            and first_word_start_pos == -1
+                            and first_word_end_pos == -1
+                    ):
+                        # MsgBox("не нашлось слова")
+                        break
+
+                    if i > 100:
+                        # MsgBox("не нашлось слова")
+                        break  # во избежание зависания
+                else:
+                    # Найден конец первого слова.
+                    second_word_end_pos = get_next_bound_end_pos(page_text, first_word_start_pos)
+                    first_word = page_text[first_word_start_pos:first_word_end_pos]
+                    # промежуток между первым и вторым словом
+                    tail = page_text[first_word_end_pos:second_word_start_pos]
+                    # Префикс - между началом предложения и началом слова.
+                    prefix = page_text[start_sentence_pos:first_word_start_pos]
+                    # Полный префикс от начала страницы
+                    full_prefix = page_text[:first_word_start_pos]
+                    second_word = page_text[second_word_start_pos:second_word_end_pos]
+
+                    capture_start_pos = len(full_prefix)  # начальная позиция захвата
+                    capture_amount = len(first_word)  # захват только 1-го слова
+
+                    # Если между первыми двумя словами есть пробел или табуляция,
+                    # то берется только 1-е слово,
+                    # иначе (напр. если слова соединены неразр. пробелом), два.
+                    if not (tail.count(' ') or tail.count('\t')):
+                        capture_amount += len(tail + second_word)
+
+                    #  Если в префиксе был знак тысячи,
+                    #  скорректировать позицию и количество захвата
+                    if prefix and prefix[-1] == THOUSAND:
+                        capture_amount += 1
+                        capture_start_pos -= 1
+
+                    out_cursor.goRight(capture_start_pos, False)  # -> в позицию захвата
+                    out_cursor.goRight(capture_amount, True)  # захват
+
+        else:
+            # Не нашлось слова, но заносим None
+            # для соответствия врезкам и страницам
+            out_cursor = None
+
+        out.append(out_cursor)
+    return out
+
+
+def get_start_end_positions_of(page: int):
+    """
+    Возвращает TextRange - позиции начала и конца страницы.
+
+    (Для получения текста всей страницы и вставки врезки).
+    :param page: номер страницы
+    :return: tuple of TextRange
+    """
+    view_cursor = doc.getCurrentController().getViewCursor()
+    view_cursor.jumpToPage(page)
+    view_cursor.jumpToStartOfPage()
+    start_pos = view_cursor.getStart()
+    view_cursor.jumpToEndOfPage()
+    end_pos = view_cursor.getEnd()
+    return start_pos, end_pos
+
+
+def bound_handler(string: str, bound_type='', start_position=0) -> int:
     """Работа с границами цся Unicode-словами в локали "cu".
 
     Обычным способом (goToEndOfWord) некорректно определяется верхняя граница ЦСЯ слова,
@@ -121,6 +269,7 @@ def bound_handler(string: str, bound_type='') -> int:
 
     :param string: Строка с одним или более словами.
     :param bound_type: Тип границы [start, end, next_start, next_end].
+    :param start_position: позиция начала поиска
     :return: Позиция границ первого или второго слова в строке (0-based).
     """
     from com.sun.star.i18n.WordType import WORD_COUNT, DICTIONARY_WORD
@@ -134,122 +283,41 @@ def bound_handler(string: str, bound_type='') -> int:
     a_locale = uno.createUnoStruct("com.sun.star.lang.Locale")
     a_locale.Language = "cu"
     a_locale.Country = "RU"
-    mystartpos = 0  # начальная позиция
+    # mystartpos = 0  # начальная позиция
     brk = create("com.sun.star.i18n.BreakIterator")
 
-    nextwd_bound = brk.nextWord(string, mystartpos, a_locale, DICTIONARY_WORD)
+    nextwd_bound = brk.nextWord(string, start_position, a_locale, DICTIONARY_WORD)
     firstwd_bound = brk.previousWord(string, nextwd_bound.startPos, a_locale, DICTIONARY_WORD)
+    start_of_sentence = brk.beginOfSentence(string, start_position, a_locale)
 
     bound_dic = {'start': firstwd_bound.startPos,
                  'end': firstwd_bound.endPos,
                  'next_start': nextwd_bound.startPos,
-                 'next_end': nextwd_bound.endPos
+                 'next_end': nextwd_bound.endPos,
+                 'start_sentence': start_of_sentence,
                  }
 
     return bound_dic.get(bound_type, -1)
 
 
-def get_bound_start_pos(string: str) -> int:
+def get_bound_start_pos(string: str, pos=0) -> int:
     # возвращает позицию нижней границы первого слова в строке
-    return bound_handler(string, 'start')
+    return bound_handler(string, 'start', pos)
 
 
-def get_bound_end_pos(string) -> int:
+def get_bound_end_pos(string, pos=0) -> int:
     # возвращает позицию верхней границы первого слова в строке
-    return bound_handler(string, 'end')
+    return bound_handler(string, 'end', pos)
 
 
-def get_next_bound_start_pos(string) -> int:
+def get_next_bound_start_pos(string, pos=0) -> int:
     # возвращает позицию нижней границы второго слова в строке
-    return bound_handler(string, 'next_start')
+    return bound_handler(string, 'next_start', pos)
 
 
-def get_next_bound_end_pos(string) -> int:
+def get_next_bound_end_pos(string, pos=0) -> int:
     # возвращает позицию верхней границы второго слова в строке
-    return bound_handler(string, 'next_end')
-
-
-def get_fw_from(page: int):
-    """На текущей странице сохраняет первое слово.
-
-    Два первых слова, соединенных неразрывным пробелом, рассматриваются как одно.
-
-    :param page: Текущая страница
-    :return: Курсор с первым(-и) словом(-ами)
-    """
-    view_cursor = doc.getCurrentController().getViewCursor()
-
-    view_cursor.jumpToPage(page)
-    view_cursor.jumpToStartOfPage()
-
-    # текстовые курсоры
-    tmp_cursor = doc.Text.createTextCursorByRange(view_cursor)  # для перемещения
-    out_cursor = doc.Text.createTextCursorByRange(view_cursor)  # для конечного захвата
-
-    # захватить одно слово+пробелы и пр. в курсор
-    prefix = ''
-    first_string = ''  # первое слово с хвостом
-    bound_end = -1  # верхняя граница первого слова
-    i = 0
-    while bound_end < 0:
-        # если что-то пойдет не так
-        i += 1
-        if i >= 30:
-            Print("Error on bounds of word!")
-            break
-
-        prefix: str = tmp_cursor.getString()  # сохранить для дальнейшего анализа
-        tmp_cursor.collapseToEnd()
-        tmp_cursor.gotoNextWord(True)
-        # -> к началу след-го слова. Если перед первым словом был, к примеру, пробел, или знак тысячи,
-        # то курсор перейдет к началу первого слова. Потребуется еще один шаг.
-        # Все, находящееся непосредственно перед первым словом, попадет в префикс.
-
-        # На случай пустой страницы. gotoNextWord() может перейти и на след-ю страницу.
-        view_cursor.gotoRange(tmp_cursor.getStart(), False)
-        vc_current_page = view_cursor.getPage()  # текущая страница view_cursor
-        if vc_current_page != page:  # если ушли с текущей странцы
-            return None
-
-        # NOTE: следующее слово может также потребовать проверки хвоста (перевод строки и т.п.)
-        first_string: str = tmp_cursor.getString()  # вся строка = первое слово + хвост
-        bound_end = get_bound_end_pos(first_string)  # верхняя граница первого слова (нижнняя = 0)
-
-    if bound_end > 0:
-        founded_first_word = first_string[:bound_end]  # Найденое первое слово
-        tail = first_string[bound_end:]  # его хвост
-
-        # Поместить выводящий курсор в начало первого слова
-        out_cursor.gotoRange(tmp_cursor.getEnd(), False)  # -> начало след-го слова
-        out_cursor.collapseToEnd()
-        out_cursor.goLeft(len(tail) + len(founded_first_word), False)  # начало 1-го слова
-
-        # Если в префиксе знак тысячи (или что-то еще нужное)
-        capture_end = bound_end  # верняя позиция для захвата курсором
-        add_shift = 0  # добавочный сдвиг для случая с неразр.пробелом
-        if prefix and prefix[-1] == '҂':
-            # скорректировать позиции захвата
-            out_cursor.goLeft(1, False)
-            capture_end += 1
-            add_shift += 1
-        out_cursor.collapseToStart()  # -> в начальную позицию захвата
-
-        # В случае с неразравным пробелом
-        if first_string.count('\xA0') and first_string[-1] != " ":
-            tmp_cursor.gotoNextWord(True)  # в курсоре - два слова с хвостами
-            string_with_both_words: str = tmp_cursor.getString()
-            bound_next_end = get_next_bound_end_pos(string_with_both_words)
-            capture_end = bound_next_end + add_shift  # новая верхняя граница для захвата
-
-        # Проверка на самый крайний случай, чтобы во врезку не попал слишком большой текст
-        capture_limit = 35  # ~ половина строки
-        if capture_end > capture_limit:
-            capture_end = capture_limit
-
-        out_cursor.goRight(capture_end, True)  # захват от начала первого слова до конца блока.
-        return out_cursor
-    else:
-        return None
+    return bound_handler(string, 'next_end', pos)
 
 
 def create_frame_on(page: int):
@@ -337,11 +405,11 @@ def fill_frame(frame, fw_cursor):
 def check_and_create_styles():
     """
     Проверка, если нет стиля врезки, и для его содержимого, создает их.
+
     Далее эти стили можно настроить под свои нужды
 
     """
 
-    # _style_families = doc.getStyleFamilies()
     frame_styles = style_families.getByName("FrameStyles")
     para_styles = style_families.getByName("ParagraphStyles")
 
@@ -377,6 +445,7 @@ def check_and_create_styles():
 
     # Проверка, если нет стиля для содержимого врезки, создать
     if not para_styles.hasByName(frame_paragaph_style_name):
+        MsgBox(f'Нет настроенного стиля для содержимого врезки. Создаем.')
         new_para_style = doc.createInstance("com.sun.star.style.ParagraphStyle")
 
         new_para_style.setName(frame_paragaph_style_name)
