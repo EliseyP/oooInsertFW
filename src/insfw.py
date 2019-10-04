@@ -93,19 +93,17 @@ def insert_fw_to_doc(*args):
 def insert_frames_to_pages():
     """Вставляет в каждую страницу документа фрейм (и заполняет его).
 
-    NOTE: м.б. заполнить отдельно?
     """
-    # n_pages = doc.getCurrentController().PageCount
 
     if n_pages == 1:
         return None
 
     # позиции начала и конца каждой страницы (кроме первой)
     pages_positions = [get_start_end_positions_of(page) for page in range(2, n_pages + 1)]
-    # Список курсоров с текстом страницы
-    cursors_with_whole_page_text = get_cursors_with_page_by(pages_positions)
+
     # Список курсоров с первыми словами для всех страниц, кроме первой
-    cursors_with_fword = get_fist_word_from(cursors_with_whole_page_text)
+    cursors_with_fword = get_fw_cursors(pages_positions)
+
     # Врезки с первой по предпоследнюю страницу,
     frames = create_frames_in_doc()
 
@@ -135,7 +133,7 @@ def create_frames_in_doc():
     return out
 
 
-def get_cursors_with_page_by(pages_positions):
+def get_fw_cursors(pages_positions):
     out = []
     for start, end in pages_positions:
         comparing = doc.Text.compareRegionStarts(start, end)
@@ -143,110 +141,106 @@ def get_cursors_with_page_by(pages_positions):
             text_cursor = doc.Text.createTextCursorByRange(start)
             text_cursor.gotoRange(start, False)
             text_cursor.gotoRange(end, True)
-            # TODO: м.б. полученный текст тут же и обработать?
-            #  (Чтобы не гонять все страницы по спискам)
-
-            out.append(text_cursor)
+            fw_cursor = get_fist_word_from_one(text_cursor)
+            if fw_cursor:
+                out.append(fw_cursor)
+            else:
+                out.append(None)
         else:
             out.append(None)
     return out
 
 
-def get_fist_word_from(cursors):
+def get_fist_word_from_one(cursor):
     """
-    Из каждого курсора с текстом страницы выбирает первое слово (или два)
-    TODO: ? нужно ли передавать текст в курсорах? м.б. удобнее обычным текстом?
-      либо для ускорения обрабатывать текст на месте, извлекая из него первое слово?
+    Из курсора с текстом страницы выбирает первое слово (или два)
 
-    :param cursors:
-    :return: список курсоров с текстом (или пустой)
+    :param cursor: курсор с текстом
+    :return: курсор с первым словом (или пустой)
     """
-    out = []
-    for cursor in cursors:
-        if cursor:
-            # Текстовый курсор, который захватит слово с форматом.
-            out_cursor = doc.Text.createTextCursorByRange(cursor.getStart())
-            page_text = cursor.getString()  # текст всей страницы.
+    if cursor:
+        # Текстовый курсор, который захватит слово с форматом.
+        out_cursor = doc.Text.createTextCursorByRange(cursor.getStart())
+        page_text = cursor.getString()  # текст всей страницы.
 
-            # Если страница без текста, но с пробелами и пустыми строками,
-            # то это предохранит от лишних движений и возможно ошибок.
-            page_text = re.sub(r'^\s*$', '', page_text)
-            # page_text = re.sub(r'^\s+', '', page_text)
+        # Если страница без текста, но с пробелами и пустыми строками,
+        # то это предохранит от лишних движений и возможно ошибок.
+        page_text = re.sub(r'^\s*$', '', page_text)
+        # page_text = re.sub(r'^\s+', '', page_text)
 
-            start_sentence_pos = bound_handler(page_text, 'start_sentence')
-            # Если нашлось предложение (не факт, что далее будет именно слово)
-            if start_sentence_pos >= 0:
-                # Двигаться по тексту, пока не найдется конец слова (первого)
-                first_word_start_pos = -1
-                first_word_end_pos = -1
-                second_word_start_pos = -1
-                tmp_position = start_sentence_pos
-                i = 0
-                while first_word_end_pos == -1:
-                    i += 1
-                    first_word_end_pos = get_bound_end_pos(page_text, tmp_position)
-                    first_word_start_pos = get_bound_start_pos(page_text, tmp_position)
-                    second_word_start_pos = get_next_bound_start_pos(page_text, tmp_position)
-                    start_sentence_pos = bound_handler(page_text, 'start_sentence', tmp_position)
-                    tmp_position = second_word_start_pos
+        start_sentence_pos = bound_handler(page_text, 'start_sentence')
+        # Если нашлось предложение (не факт, что далее будет именно слово)
+        if start_sentence_pos >= 0:
+            # Двигаться по тексту, пока не найдется конец слова (первого)
+            first_word_start_pos = -1
+            first_word_end_pos = -1
+            second_word_start_pos = -1
+            tmp_position = start_sentence_pos
+            i = 0
+            while first_word_end_pos == -1:
+                i += 1
+                first_word_end_pos = get_bound_end_pos(page_text, tmp_position)
+                first_word_start_pos = get_bound_start_pos(page_text, tmp_position)
+                second_word_start_pos = get_next_bound_start_pos(page_text, tmp_position)
+                start_sentence_pos = bound_handler(page_text, 'start_sentence', tmp_position)
+                tmp_position = second_word_start_pos
 
-                    # MsgBox(
-                    #     f'Шаг {i}. tmp: {tmp_position}\nsentence: {start_sentence_pos}\n'
-                    #     f'1-е слово: [{first_word_start_pos}:{first_word_end_pos}] '
-                    #     f'|{page_text[first_word_start_pos:first_word_end_pos]}|\n'
-                    #     f'2-е слово: [{second_word_start_pos}:]\n'
-                    #     # f'tmp_sent = {tmp_sent}'
-                    # )
+                # MsgBox(
+                #     f'Шаг {i}. tmp: {tmp_position}\nsentence: {start_sentence_pos}\n'
+                #     f'1-е слово: [{first_word_start_pos}:{first_word_end_pos}] '
+                #     f'|{page_text[first_word_start_pos:first_word_end_pos]}|\n'
+                #     f'2-е слово: [{second_word_start_pos}:]\n'
+                #     # f'tmp_sent = {tmp_sent}'
+                # )
 
-                    # Если нет приемлемого текста, но страница не совсем пуста.
-                    if (
-                            second_word_start_pos > 0
-                            and first_word_start_pos == -1
-                            and first_word_end_pos == -1
-                    ):
-                        # MsgBox("не нашлось слова")
-                        break
+                # Если нет приемлемого текста, но страница не совсем пуста.
+                if (
+                        second_word_start_pos > 0
+                        and first_word_start_pos == -1
+                        and first_word_end_pos == -1
+                ):
+                    # MsgBox("не нашлось слова")
+                    break
 
-                    if i > 100:
-                        # MsgBox("не нашлось слова")
-                        break  # во избежание зависания
-                else:
-                    # Найден конец первого слова.
-                    second_word_end_pos = get_next_bound_end_pos(page_text, first_word_start_pos)
-                    first_word = page_text[first_word_start_pos:first_word_end_pos]
-                    # промежуток между первым и вторым словом
-                    tail = page_text[first_word_end_pos:second_word_start_pos]
-                    # Префикс - между началом предложения и началом слова.
-                    prefix = page_text[start_sentence_pos:first_word_start_pos]
-                    # Полный префикс от начала страницы
-                    full_prefix = page_text[:first_word_start_pos]
-                    second_word = page_text[second_word_start_pos:second_word_end_pos]
+                if i > 100:
+                    # MsgBox("не нашлось слова")
+                    break  # во избежание зависания
+            else:
+                # Найден конец первого слова.
+                second_word_end_pos = get_next_bound_end_pos(page_text, first_word_start_pos)
+                first_word = page_text[first_word_start_pos:first_word_end_pos]
+                # промежуток между первым и вторым словом
+                tail = page_text[first_word_end_pos:second_word_start_pos]
+                # Префикс - между началом предложения и началом слова.
+                prefix = page_text[start_sentence_pos:first_word_start_pos]
+                # Полный префикс от начала страницы
+                full_prefix = page_text[:first_word_start_pos]
+                second_word = page_text[second_word_start_pos:second_word_end_pos]
 
-                    capture_start_pos = len(full_prefix)  # начальная позиция захвата
-                    capture_amount = len(first_word)  # захват только 1-го слова
+                capture_start_pos = len(full_prefix)  # начальная позиция захвата
+                capture_amount = len(first_word)  # захват только 1-го слова
 
-                    # Если между первыми двумя словами есть пробел или табуляция,
-                    # то берется только 1-е слово,
-                    # иначе (напр. если слова соединены неразр. пробелом), два.
-                    if not (tail.count(' ') or tail.count('\t')):
-                        capture_amount += len(tail + second_word)
+                # Если между первыми двумя словами есть пробел или табуляция,
+                # то берется только 1-е слово,
+                # иначе (напр. если слова соединены неразр. пробелом), два.
+                if not (tail.count(' ') or tail.count('\t')):
+                    capture_amount += len(tail + second_word)
 
-                    #  Если в префиксе был знак тысячи,
-                    #  скорректировать позицию и количество захвата
-                    if prefix and prefix[-1] == THOUSAND:
-                        capture_amount += 1
-                        capture_start_pos -= 1
+                #  Если в префиксе был знак тысячи,
+                #  скорректировать позицию и количество захвата
+                if prefix and prefix[-1] == THOUSAND:
+                    capture_amount += 1
+                    capture_start_pos -= 1
 
-                    out_cursor.goRight(capture_start_pos, False)  # -> в позицию захвата
-                    out_cursor.goRight(capture_amount, True)  # захват
+                out_cursor.goRight(capture_start_pos, False)  # -> в позицию захвата
+                out_cursor.goRight(capture_amount, True)  # захват
 
-        else:
-            # Не нашлось слова, но заносим None
-            # для соответствия врезкам и страницам
-            out_cursor = None
+    else:
+        # Не нашлось слова, но заносим None
+        # для соответствия врезкам и страницам
+        out_cursor = None
 
-        out.append(out_cursor)
-    return out
+    return out_cursor
 
 
 def get_start_end_positions_of(page: int):
