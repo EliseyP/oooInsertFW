@@ -120,7 +120,7 @@ def insert_frames_to_pages():
             fill_frame(frame, cursor)  # занести слово во врезку
 
 
-def clear_current_frame():
+def clear_current_frame(*args):
     # Очищает врезку на текущей странице
     page = doc.getCurrentController().getViewCursor().getPage()
     clear_frame_on_current(page)
