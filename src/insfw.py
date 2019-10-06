@@ -50,15 +50,15 @@ def Mri_test():
 
 def Mri(target):
     ctx = context.getComponentContext()
-    mri = ctx.ServiceManager.createInstanceWithContext(
+    _mri = ctx.ServiceManager.createInstanceWithContext(
         "mytools.Mri", ctx)
-    mri.inspect(target)
+    _mri.inspect(target)
 
 
 def mri(ctx, target):
-    mri = ctx.ServiceManager.createInstanceWithContext(
-        "mytools.Mri",ctx)
-    mri.inspect(target)
+    _mri = ctx.ServiceManager.createInstanceWithContext(
+        "mytools.Mri", ctx)
+    _mri.inspect(target)
 
 
 def remove_all(*args):
@@ -118,6 +118,19 @@ def insert_frames_to_pages():
         # Если есть последнее слово и врезка
         if frame and cursor:  # and frame.String != cursor.String:
             fill_frame(frame, cursor)  # занести слово во врезку
+
+
+def clear_current_frame():
+    # Очищает врезку на текущей странице
+    page = doc.getCurrentController().getViewCursor().getPage()
+    clear_frame_on_current(page)
+
+
+def clear_frame_on_current(page):
+    frame_name = "{}{}".format(frame_prefix, page)
+    frames = doc.getTextFrames()
+    if frames.hasByName(frame_name):
+        frames.getByName(frame_name).setString('')
 
 
 def make_all_frames_in(pages_positions):
@@ -423,7 +436,7 @@ def check_and_create_styles():
 
     # Проверка, если нет стиля для врезки, создать
     if not frame_styles.hasByName(frame_style_name):
-        MsgBox(f'Нет настроенного стиля врезки. Создаем.')
+        MsgBox('Нет настроенного стиля врезки. Создаем.')
         new_frame_style = doc.createInstance("com.sun.star.style.FrameStyle")
         new_frame_style.setName(frame_style_name)
         new_frame_style.AnchorType = 2  # AT_PAGE
@@ -449,11 +462,11 @@ def check_and_create_styles():
         frame_styles.insertByName(frame_style_name, new_frame_style)
         if frame_styles.hasByName(frame_style_name):
             frame_styles.getByName(frame_style_name).ParentStyle = 'Frame'
-            MsgBox(f'Cтиль врезки:\n"{frame_style_name}"\nсоздан.')
+            MsgBox('Cтиль врезки:\n"{}"\nсоздан.'.format(frame_style_name))
 
     # Проверка, если нет стиля для содержимого врезки, создать
     if not para_styles.hasByName(frame_paragaph_style_name):
-        MsgBox(f'Нет настроенного стиля для содержимого врезки. Создаем.')
+        MsgBox('Нет настроенного стиля для содержимого врезки. Создаем.')
         new_para_style = doc.createInstance("com.sun.star.style.ParagraphStyle")
 
         new_para_style.setName(frame_paragaph_style_name)
@@ -469,7 +482,7 @@ def check_and_create_styles():
 
         if para_styles.hasByName(frame_paragaph_style_name):
             para_styles.getByName(frame_paragaph_style_name).ParentStyle = "Frame contents"
-            MsgBox(f'Cтиль абзаца для содержимого врезки:\n"{frame_paragaph_style_name}"\nсоздан.')
+            MsgBox('Cтиль абзаца для содержимого врезки:\n"{}"\nсоздан.'.format(frame_paragaph_style_name))
 
 
 def remove_first_words_frames():
@@ -494,4 +507,4 @@ def restore_pos_from(saved_view_data):
     return None
 
 
-g_exportedScripts = insert_fw_to_doc, remove_all, update_all,
+g_exportedScripts = insert_fw_to_doc, remove_all, update_all, clear_current_frame,
