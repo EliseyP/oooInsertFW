@@ -17,6 +17,14 @@ import re
 from screen_io import MsgBox, InputBox, Print
 # from com.sun.star.lang import IndexOutOfBoundsException
 
+# TODO:
+# - init для интерфейсных функций
+# - случай если первое слово - одно на стпервой строке. (происходит захват второго на второй)
+# - защитить врезку (напр. если нужно оставиь ее пустой). - проверка атрибута - защита содержания.
+# - перемещение врезки.
+# - не ставить врезку на титульной странице.
+# - случай если врезки были созданы при цветном стиле и нужно перейти на ч/б стиль.
+
 frame_prefix = "FWFrame_"
 # настроенный cтиль врезки
 frame_style_name = "ВрезкаСловоСледСтр"
@@ -431,6 +439,7 @@ def check_and_create_styles():
 
     """
 
+    # style_families = doc.getStyleFamilies()
     frame_styles = style_families.getByName("FrameStyles")
     para_styles = style_families.getByName("ParagraphStyles")
 
@@ -505,6 +514,16 @@ def restore_pos_from(saved_view_data):
     # восстанавливает позицию
     doc.getCurrentController().restoreViewData(saved_view_data)
     return None
+
+
+def up_current_frame():
+    # поднять врезку на 0.10
+    pass
+
+
+def down_current_frame():
+    # опустить врезку на 0.10
+    pass
 
 
 g_exportedScripts = insert_fw_to_doc, remove_all, update_all, clear_current_frame,
