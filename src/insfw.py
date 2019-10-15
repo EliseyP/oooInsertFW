@@ -132,6 +132,13 @@ class Frame:
         else:
             MsgBox('Содержимое врезки защищено!')
 
+    def delete(self):
+        if not self.is_protected():
+            self.frame_obj.dispose()
+        else:
+            MsgBox('Содержимое врезки защищено!')
+
+
     def move_up(self):
         self.frame_obj.BottomMargin += 50
 
@@ -621,6 +628,15 @@ def clear_current_frame(*args):
     if frame:
         frame.clear()
 
+
+def delete_current_frame(*args):
+    # Удаляет врезку на текущей странице
+    page = get_page(doc)
+    frame = Frame(page)
+    if frame:
+        frame.delete()
+
+
 def up_current_frame(*args):
     # поднять врезку на 0.05
     page = get_page(doc)
@@ -662,4 +678,5 @@ g_exportedScripts = (
     up_current_frame,
     protect_current_frame,
     unprotect_current_frame,
+    delete_current_frame,
 )
