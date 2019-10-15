@@ -18,9 +18,6 @@ from screen_io import MsgBox, InputBox, Print
 # from com.sun.star.lang import IndexOutOfBoundsException
 
 # TODO:
-# - случай если первое слово - одно на стпервой строке. (происходит захват второго на второй)
-# - защитить врезку (напр. если нужно оставиь ее пустой). - проверка атрибута - защита содержания.
-# - перемещение врезки.
 # - не ставить врезку на титульной странице.
 # - случай если врезки были созданы при цветном стиле и нужно перейти на ч/б стиль.
 
@@ -578,25 +575,25 @@ def clear_current_frame(*args):
     Frame(page).clear()
 
 
-def up_current_frame():
+def up_current_frame(*args):
     # поднять врезку на 0.05
     page = get_page(doc)
     Frame(page).move_up()
 
 
-def down_current_frame():
+def down_current_frame(*args):
     # опустить врезку на 0.05
     page = get_page(doc)
     Frame(page).move_down()
 
 
-def protect_current_frame():
+def protect_current_frame(*args):
     # Защитить содержимое врезки
     page = get_page(doc)
     Frame(page).protect()
 
 
-def unprotect_current_frame():
+def unprotect_current_frame(*args):
     # Убрать защиту содержимого врезки
     page = get_page(doc)
     Frame(page).unprotect()
