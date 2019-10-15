@@ -99,59 +99,55 @@ class Frame:
     # Frame - вспомогательный класс,
     # обертка над frame из OO (Frame.frame_obj)
 
+    def __new__(cls, page):
+        frame_name = frame_prefix + str(page)
+        frames = doc.getTextFrames()
+        # объект создается только при наличии врезки на странице
+        if frames.hasByName(frame_name):
+            return object.__new__(cls)
+        else:
+            MsgBox('На этой странице нет врезки')
+            return None
+
     def __init__(self, page):
         frame_name = frame_prefix + str(page)
         frames = doc.getTextFrames()
+
         self.name = frame_name
         self.page = page
-        if frames.hasByName(frame_name):
-            self.frame_obj = frames.getByName(frame_name)
-        else:
-            self.frame_obj = None
+        self.frame_obj = frames.getByName(frame_name)
 
         self.protected = self.is_protected()
         self.string = self.get_string()
 
     def get_string(self):
-        if self.frame_obj:
-            return self.frame_obj.getString()
+        return self.frame_obj.getString()
 
     def set_string(self, string):
-        if self.frame_obj:
-            self.frame_obj.setString(string)
+        self.frame_obj.setString(string)
 
     def clear(self):
-        if self.frame_obj:
-            if not self.is_protected():
-                self.set_string('')
+        if not self.is_protected():
+            self.set_string('')
+        else:
+            MsgBox('Содержимое врезки защищено!')
 
     def move_up(self):
-        if self.frame_obj:
-            self.frame_obj.BottomMargin += 50
+        self.frame_obj.BottomMargin += 50
 
     def move_down(self):
-        if self.frame_obj:
-            self.frame_obj.BottomMargin -= 50
-
-    def is_exists(self):
-        if self.frame_obj:
-            return True
-        else:
-            return False
+        self.frame_obj.BottomMargin -= 50
 
     def is_protected(self):
-        if self.frame_obj:
-            return self.frame_obj.ContentProtected
+        return self.frame_obj.ContentProtected
 
     def protect(self):
-        if self.frame_obj:
-            self.frame_obj.ContentProtected = True
-            MsgBox('Содержимое врезки на стр.{} защищено'.format(self.page))
+        self.frame_obj.ContentProtected = True
+        MsgBox('Содержимое врезки на стр.{} защищено'.format(self.page))
 
     def unprotect(self):
-        if self.frame_obj:
-            self.frame_obj.ContentProtected = False
-            MsgBox('Содержимое врезки на стр.{} разблокировано'.format(self.page))
+        self.frame_obj.ContentProtected = False
+        MsgBox('Содержимое врезки на стр.{} разблокировано'.format(self.page))
 
 
 def Mri_test():
@@ -621,31 +617,40 @@ def restore_pos_from(saved_view_data):
 def clear_current_frame(*args):
     # Очищает врезку на текущей странице
     page = get_page(doc)
-    Frame(page).clear()
-
+    frame = Frame(page)
+    if frame:
+        frame.clear()
 
 def up_current_frame(*args):
     # поднять врезку на 0.05
     page = get_page(doc)
-    Frame(page).move_up()
+    frame = Frame(page)
+    if frame:
+        frame.move_up()
 
 
 def down_current_frame(*args):
     # опустить врезку на 0.05
     page = get_page(doc)
-    Frame(page).move_down()
+    frame = Frame(page)
+    if frame:
+        frame.move_down()
 
 
 def protect_current_frame(*args):
     # Защитить содержимое врезки
     page = get_page(doc)
-    Frame(page).protect()
+    frame = Frame(page)
+    if frame:
+        frame.protect()
 
 
 def unprotect_current_frame(*args):
     # Убрать защиту содержимого врезки
     page = get_page(doc)
-    Frame(page).unprotect()
+    frame = Frame(page)
+    if frame:
+        frame.unprotect()
 
 
 g_exportedScripts = (
