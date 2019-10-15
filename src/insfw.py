@@ -18,7 +18,6 @@ from screen_io import MsgBox, InputBox, Print
 # from com.sun.star.lang import IndexOutOfBoundsException
 
 # TODO:
-# - init для интерфейсных функций
 # - случай если первое слово - одно на стпервой строке. (происходит захват второго на второй)
 # - защитить врезку (напр. если нужно оставиь ее пустой). - проверка атрибута - защита содержания.
 # - перемещение врезки.
@@ -50,6 +49,65 @@ else:
     kinovar_color = 0
 
 
+class Frame:
+    # Frame - вспомогательный класс,
+    # обертка над frame из OO (Frame.frame_obj)
+
+    def __init__(self, page):
+        frame_name = frame_prefix + str(page)
+        frames = doc.getTextFrames()
+        self.name = frame_name
+        self.page = page
+        if frames.hasByName(frame_name):
+            self.frame_obj = frames.getByName(frame_name)
+        else:
+            self.frame_obj = None
+
+        self.protected = self.is_protected()
+        self.string = self.get_string()
+
+    def get_string(self):
+        if self.frame_obj:
+            return self.frame_obj.getString()
+
+    def set_string(self, string):
+        if self.frame_obj:
+            self.frame_obj.setString(string)
+
+    def clear(self):
+        if self.frame_obj:
+            if not self.is_protected():
+                self.set_string('')
+
+    def move_up(self):
+        if self.frame_obj:
+            self.frame_obj.BottomMargin += 50
+
+    def move_down(self):
+        if self.frame_obj:
+            self.frame_obj.BottomMargin -= 50
+
+    def is_exists(self):
+        if self.frame_obj:
+            return True
+        else:
+            return False
+
+    def is_protected(self):
+        if self.frame_obj:
+            return self.frame_obj.ContentProtected
+
+    def protect(self):
+        if self.frame_obj:
+            self.frame_obj.ContentProtected = True
+            MsgBox('Содержимое врезки на стр.{} защищено'.format(self.page))
+
+    def unprotect(self):
+        if self.frame_obj:
+            self.frame_obj.ContentProtected = False
+            MsgBox('Содержимое врезки на стр.{} разблокировано'.format(self.page))
+
+
 def Mri_test():
     ctx = context.getComponentContext()
     document = context.getDocument()
@@ -67,6 +125,10 @@ def mri(ctx, target):
     _mri = ctx.ServiceManager.createInstanceWithContext(
         "mytools.Mri", ctx)
     _mri.inspect(target)
+
+
+def get_page(_doc):
+    return _doc.getCurrentController().getViewCursor().getPage()
 
 
 def remove_all(*args):
@@ -123,22 +185,9 @@ def insert_frames_to_pages():
         return None
 
     for frame, cursor in zip(frames, cursors_with_fword):
-        # Если есть последнее слово и врезка
-        if frame and cursor:  # and frame.String != cursor.String:
+        # Если есть последнее слово и врезка, и если содержимое врезки не защищено,
+        if frame and cursor and not frame.ContentProtected:  # and frame.String != cursor.String:
             fill_frame(frame, cursor)  # занести слово во врезку
-
-
-def clear_current_frame(*args):
-    # Очищает врезку на текущей странице
-    page = doc.getCurrentController().getViewCursor().getPage()
-    clear_frame_on_current(page)
-
-
-def clear_frame_on_current(page):
-    frame_name = "{}{}".format(frame_prefix, page)
-    frames = doc.getTextFrames()
-    if frames.hasByName(frame_name):
-        frames.getByName(frame_name).setString('')
 
 
 def make_all_frames_in(pages_positions):
@@ -252,9 +301,15 @@ def get_fist_word_from_one(cursor):
                 capture_amount = len(first_word)  # захват только 1-го слова
 
                 # Если между первыми двумя словами есть пробел или табуляция,
+                # если слово одно на 1-й строке, но на второй троке есть еще слово,
                 # то берется только 1-е слово,
                 # иначе (напр. если слова соединены неразр. пробелом), два.
-                if not (tail.count(' ') or tail.count('\t')):
+                if not (
+                        tail.count(' ')
+                        or tail.count('\t')
+                        or tail.count('\x0A')  # new line
+                        or tail.count('\x0D')  # new para
+                ):
                     capture_amount += len(tail + second_word)
 
                 #  Если в префиксе был знак тысячи,
@@ -320,12 +375,13 @@ def bound_handler(string: str, bound_type='', start_position=0) -> int:
     firstwd_bound = brk.previousWord(string, nextwd_bound.startPos, a_locale, DICTIONARY_WORD)
     start_of_sentence = brk.beginOfSentence(string, start_position, a_locale)
 
-    bound_dic = {'start': firstwd_bound.startPos,
-                 'end': firstwd_bound.endPos,
-                 'next_start': nextwd_bound.startPos,
-                 'next_end': nextwd_bound.endPos,
-                 'start_sentence': start_of_sentence,
-                 }
+    bound_dic = {
+        'start': firstwd_bound.startPos,
+        'end': firstwd_bound.endPos,
+        'next_start': nextwd_bound.startPos,
+        'next_end': nextwd_bound.endPos,
+        'start_sentence': start_of_sentence,
+    }
 
     return bound_dic.get(bound_type, -1)
 
@@ -516,14 +572,43 @@ def restore_pos_from(saved_view_data):
     return None
 
 
+def clear_current_frame(*args):
+    # Очищает врезку на текущей странице
+    page = get_page(doc)
+    Frame(page).clear()
+
+
 def up_current_frame():
-    # поднять врезку на 0.10
-    pass
+    # поднять врезку на 0.05
+    page = get_page(doc)
+    Frame(page).move_up()
 
 
 def down_current_frame():
-    # опустить врезку на 0.10
-    pass
+    # опустить врезку на 0.05
+    page = get_page(doc)
+    Frame(page).move_down()
 
 
-g_exportedScripts = insert_fw_to_doc, remove_all, update_all, clear_current_frame,
+def protect_current_frame():
+    # Защитить содержимое врезки
+    page = get_page(doc)
+    Frame(page).protect()
+
+
+def unprotect_current_frame():
+    # Убрать защиту содержимого врезки
+    page = get_page(doc)
+    Frame(page).unprotect()
+
+
+g_exportedScripts = (
+    insert_fw_to_doc,
+    remove_all,
+    update_all,
+    clear_current_frame,
+    down_current_frame,
+    up_current_frame,
+    protect_current_frame,
+    unprotect_current_frame,
+)
