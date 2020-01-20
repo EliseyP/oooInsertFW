@@ -19,47 +19,17 @@ from com.sun.star.awt.MessageBoxButtons import BUTTONS_OK, BUTTONS_OK_CANCEL, BU
 from com.sun.star.awt.MessageBoxResults import OK, YES, NO, CANCEL
 
 # import unohelper
-# from screen_io import MsgBox, InputBox, Print
 # from com.sun.star.lang import IndexOutOfBoundsException
-
-# def MsgBox(prompt: str, buttons=0, title='LibreOffice') -> int:
-#     """ Displays a dialog box containing a message and returns a value."""
-#     xScript = _getScript("_MsgBox")
-#     res = xScript.invoke((prompt, buttons, title), (), ())
-#     return res[0]
-#
-#
-# def InputBox(prompt: str, title='LibreOffice', defaultValue='') -> str:
-#     """ Displays a prompt in a dialog box at which the user can enter text."""
-#     xScript = _getScript("_InputBox")
-#     res = xScript.invoke((prompt, title, defaultValue), (), ())
-#     return res[0]
-#
-#
-# def Print(message: str):
-#     """Outputs the specified strings or numeric expressions in a dialog box."""
-#     xScript = _getScript("_Print")
-#     xScript.invoke((message,), (), ())
-
-
-# import uno
-# from com.sun.star.script.provider import XScript
-
-
-# def _getScript(script: str, library='Standard', module='uiScripts') -> XScript:
-#     sm = uno.getComponentContext().ServiceManager
-#     mspf = sm.createInstanceWithContext("com.sun.star.script.provider.MasterScriptProviderFactory",
-#                                         uno.getComponentContext())
-#     scriptPro = mspf.createScriptProvider("")
-#     scriptName = "vnd.sun.star.script:" + library + "." + module + "." + script + "?language=Basic&location=application"
-#     xScript = scriptPro.getScript(scriptName)
-#     return xScript
-
-
 
 # TODO:
 # - не ставить врезку на титульной странице.
 # - случай если врезки были созданы при цветном стиле и нужно перейти на ч/б стиль.
+# - уточнить логику
+#   - обновить все (update_all) - создать заново
+#   - добавить: обновить только содержимое врезок
+#   - добавить: обновить содержимое только текущей врезки
+#   - ?? м.б. разделить защиту содержимого и положения врезки
+#   - оставив метод защитить "оба" параметра
 
 frame_prefix = "FWFrame_"
 # настроенный cтиль врезки
@@ -71,19 +41,21 @@ char_style_name = "киноварь"
 THOUSAND = '҂'
 
 context = XSCRIPTCONTEXT
-desktop = context.getDesktop()
-doc = desktop.getCurrentComponent()
+# desktop = context.getDesktop()
+# doc = desktop.getCurrentComponent()
+doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
 n_pages = doc.getCurrentController().PageCount
 
-style_families = doc.getStyleFamilies()
-char_styles = style_families.getByName("CharacterStyles")
-# Если есть стиль киноварь, получить значение его цвета.
-# В дальнейшем, если он не красный (в стиле для ч/б печати),
-# будет учитываться "жирность" при вставке текста во врезку.
-if char_styles.hasByName(char_style_name):
-    kinovar_color = char_styles.getByName(char_style_name).CharColor
-else:
-    kinovar_color = 0
+# style_families = doc.getStyleFamilies()
+# char_styles = style_families.getByName("CharacterStyles")
+# char_styles = doc.getStyleFamilies().getByName("CharacterStyles")
+# # Если есть стиль киноварь, получить значение его цвета.
+# # В дальнейшем, если он не красный (в стиле для ч/б печати),
+# # будет учитываться "жирность" при вставке текста во врезку.
+# if char_styles.hasByName(char_style_name):
+#     kinovar_color = char_styles.getByName(char_style_name).CharColor
+# else:
+#     kinovar_color = 0
 
 
 def MsgBox(message, title=''):
@@ -138,7 +110,6 @@ class Frame:
         else:
             MsgBox('Содержимое врезки защищено!')
 
-
     def move_up(self):
         self.frame_obj.BottomMargin += 50
 
@@ -181,12 +152,16 @@ def get_page(_doc):
 
 
 def remove_all(*args):
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     view_data = save_pos()
     remove_first_words_frames()
     restore_pos_from(view_data)
 
 
 def update_all(*args):
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     view_data = save_pos()
     remove_first_words_frames()
     insert_frames_to_pages()
@@ -198,6 +173,8 @@ def insert_fw_to_doc(*args):
 
     :return
     """
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     # Если нет стиля врезки, создать.
     check_and_create_styles()
 
@@ -495,6 +472,15 @@ def fill_frame(frame, fw_cursor):
     :param fw_cursor: курсор с первым словом
     :return:
     """
+
+    char_styles = doc.getStyleFamilies().getByName("CharacterStyles")
+    # Если есть стиль киноварь, получить значение его цвета.
+    # В дальнейшем, если он не красный (в стиле для ч/б печати),
+    # будет учитываться "жирность" при вставке текста во врезку.
+    kinovar_color = 0
+    if char_styles.hasByName(char_style_name):
+        kinovar_color = char_styles.getByName(char_style_name).CharColor
+
     # Очистка текста фрейма, т.к. запись нужна
     # либо в новый, либо в устаревший фрейм
     frame.String = ""
@@ -544,7 +530,7 @@ def check_and_create_styles():
 
     """
 
-    # style_families = doc.getStyleFamilies()
+    style_families = doc.getStyleFamilies()
     frame_styles = style_families.getByName("FrameStyles")
     para_styles = style_families.getByName("ParagraphStyles")
 
@@ -622,6 +608,8 @@ def restore_pos_from(saved_view_data):
 
 
 def clear_current_frame(*args):
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     # Очищает врезку на текущей странице
     page = get_page(doc)
     frame = Frame(page)
@@ -631,6 +619,8 @@ def clear_current_frame(*args):
 
 def delete_current_frame(*args):
     # Удаляет врезку на текущей странице
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     page = get_page(doc)
     frame = Frame(page)
     if frame:
@@ -639,6 +629,8 @@ def delete_current_frame(*args):
 
 def up_current_frame(*args):
     # поднять врезку на 0.05
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     page = get_page(doc)
     frame = Frame(page)
     if frame:
@@ -647,6 +639,8 @@ def up_current_frame(*args):
 
 def down_current_frame(*args):
     # опустить врезку на 0.05
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     page = get_page(doc)
     frame = Frame(page)
     if frame:
@@ -655,6 +649,8 @@ def down_current_frame(*args):
 
 def protect_current_frame(*args):
     # Защитить содержимое врезки
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     page = get_page(doc)
     frame = Frame(page)
     if frame:
@@ -663,6 +659,8 @@ def protect_current_frame(*args):
 
 def unprotect_current_frame(*args):
     # Убрать защиту содержимого врезки
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     page = get_page(doc)
     frame = Frame(page)
     if frame:
