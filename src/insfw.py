@@ -127,6 +127,11 @@ class Frame:
         self.frame_obj.ContentProtected = False
         MsgBox('Содержимое врезки на стр.{} разблокировано'.format(self.page))
 
+    def update_only_current(self):
+        # Если это не последня страница
+        curr_page = self.page
+        insert_frames_to_pages(curr_page + 1, True)
+
 
 def Mri_test():
     ctx = context.getComponentContext()
@@ -163,7 +168,7 @@ def update_all(*args):
     global doc
     doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     view_data = save_pos()
-    remove_first_words_frames()
+    # remove_first_words_frames()
     insert_frames_to_pages()
     restore_pos_from(view_data)
 
@@ -186,28 +191,42 @@ def insert_fw_to_doc(*args):
     restore_pos_from(view_data)
 
 
-def insert_frames_to_pages():
+def insert_frames_to_pages(start_page=2, one_page_flag=False):
     """Вставляет в каждую страницу документа фрейм (и заполняет его).
 
+    :param start_page: начальная страница для обработки. По умолчанию, начиная со второй.
+    :param one_page_flag: флаг обработки только текущей страницы
     """
+
+    if one_page_flag:
+        end_page = start_page + 1
+    else:
+        end_page = n_pages
 
     if n_pages == 1:
         return None
 
     # позиции начала и конца каждой страницы (кроме первой)
-    pages_positions = [get_start_end_positions_of(page) for page in range(2, n_pages + 1)]
+    pages_positions = [get_start_end_positions_of(page) for page in range(start_page, end_page + 1)]
 
     # Список курсоров с первыми словами для всех страниц, кроме первой
     cursors_with_fword = get_fw_cursors(pages_positions)
 
-    # Врезки с первой по предпоследнюю страницу,
-    frames = make_all_frames_in(pages_positions)
+    # Для всего документа
+    if not one_page_flag:
+        # Врезки с первой по предпоследнюю страницу,
+        frames = make_all_frames_in(pages_positions)  # , start_page - 2)
+    # Для текущей страницы
+    else:
+        _curr_page = start_page - 1
+        _start, _end = get_start_end_positions_of(_curr_page)
+        frames = [make_frame_in_position(_curr_page, _end), None]
 
     if not cursors_with_fword or not frames:
         return None
 
     # кол-во врезок и курсоров должно совпадать с n-1 страниц в док-те.
-    if not (n_pages-1 == len(frames) == len(cursors_with_fword)):
+    if not (end_page - start_page + 1 == len(frames) == len(cursors_with_fword)):
         return None
 
     for frame, cursor in zip(frames, cursors_with_fword):
@@ -216,18 +235,19 @@ def insert_frames_to_pages():
             fill_frame(frame, cursor)  # занести слово во врезку
 
 
-def make_all_frames_in(pages_positions):
+def make_all_frames_in(pages_positions, _page=0):
     """Создать (или получить имеющиеся) врезки
 
     :param pages_positions: список кортежей позиций начала и конца страницы
+    :param _page: номер страницы, с которой начинать счет.
     :return: список врезок
     """
     out_frames = []
     # для всех концов страниц (кроме последней),
-    page = 0
+    # page = 0
     for _, end in pages_positions:
-        page += 1
-        frame = make_frame_in_position(page, end)  # создать (или получить имеющуюся) врезку
+        _page += 1
+        frame = make_frame_in_position(_page, end)  # создать (или получить имеющуюся) врезку
         if frame:
             out_frames.append(frame)
         else:
@@ -607,6 +627,16 @@ def restore_pos_from(saved_view_data):
     return None
 
 
+def update_current_frame(*args):
+    global doc
+    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
+    # Очищает врезку на текущей странице
+    page = get_page(doc)
+    frame = Frame(page)
+    if frame:
+        frame.update_only_current()
+
+
 def clear_current_frame(*args):
     global doc
     doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
@@ -677,4 +707,5 @@ g_exportedScripts = (
     protect_current_frame,
     unprotect_current_frame,
     delete_current_frame,
+    update_current_frame,
 )
