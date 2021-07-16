@@ -562,7 +562,8 @@ def check_and_create_styles():
         new_frame_style.AnchorType = 2  # AT_PAGE
         new_frame_style.BorderDistance = 0
         new_frame_style.BottomBorderDistance = 0
-        new_frame_style.BottomMargin = 1300
+        # Для нижнего поля 2300, интерлиньяж одинарный, кегль 20пт.
+        new_frame_style.BottomMargin = 1650
         new_frame_style.HoriOrient = 1
         new_frame_style.HoriOrientRelation = 8
         new_frame_style.IsFollowingTextFlow = 'True'
