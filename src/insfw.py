@@ -294,6 +294,10 @@ def get_fist_word_from_one(cursor):
         page_text = re.sub(r'^\s*$', '', page_text)
         # page_text = re.sub(r'^\s+', '', page_text)
 
+        # Если перед первым словом стоят кавычки («),
+        # то не работает граница слова.
+        page_text = re.sub(r'^«', 'Ѣ', page_text)
+
         start_sentence_pos = bound_handler(page_text, 'start_sentence')
         # Если нашлось предложение (не факт, что далее будет именно слово)
         if start_sentence_pos >= 0:
