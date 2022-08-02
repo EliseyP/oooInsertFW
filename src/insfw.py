@@ -14,12 +14,9 @@ from __future__ import unicode_literals
 
 import uno
 import re
-from com.sun.star.awt.MessageBoxType import MESSAGEBOX, INFOBOX, WARNINGBOX, ERRORBOX, QUERYBOX
-from com.sun.star.awt.MessageBoxButtons import BUTTONS_OK, BUTTONS_OK_CANCEL, BUTTONS_YES_NO, BUTTONS_YES_NO_CANCEL, BUTTONS_RETRY_CANCEL, BUTTONS_ABORT_IGNORE_RETRY
-from com.sun.star.awt.MessageBoxResults import OK, YES, NO, CANCEL
+from com.sun.star.awt.MessageBoxType import MESSAGEBOX
+from com.sun.star.awt.MessageBoxButtons import BUTTONS_OK
 
-# import unohelper
-# from com.sun.star.lang import IndexOutOfBoundsException
 
 # TODO:
 # - не ставить врезку на титульной странице.
@@ -31,31 +28,40 @@ from com.sun.star.awt.MessageBoxResults import OK, YES, NO, CANCEL
 #   - ?? м.б. разделить защиту содержимого и положения врезки
 #   - оставив метод защитить "оба" параметра
 
-frame_prefix = "FWFrame_"
+FRAME_PREFIX = "FWFrame_"
 # настроенный cтиль врезки
-frame_style_name = "ВрезкаСловоСледСтр"
+FRAME_STYLE_NAME = "ВрезкаСловоСледСтр"
 # настроенный абзацный cтиль для содержимого врезки
-frame_paragaph_style_name = "Содержимое врезки ПервоеСловоСледСтр"
+FRAME_PARAGAPH_STYLE_NAME = "Содержимое врезки ПервоеСловоСледСтр"
 # стиль символов
-char_style_name = "киноварь"
+CHAR_STYLE_NAME = "киноварь"
 THOUSAND = '҂'
 
-context = XSCRIPTCONTEXT
-# desktop = context.getDesktop()
-# doc = desktop.getCurrentComponent()
-doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-n_pages = doc.getCurrentController().PageCount
 
-# style_families = doc.getStyleFamilies()
-# char_styles = style_families.getByName("CharacterStyles")
-# char_styles = doc.getStyleFamilies().getByName("CharacterStyles")
-# # Если есть стиль киноварь, получить значение его цвета.
-# # В дальнейшем, если он не красный (в стиле для ч/б печати),
-# # будет учитываться "жирность" при вставке текста во врезку.
-# if char_styles.hasByName(char_style_name):
-#     kinovar_color = char_styles.getByName(char_style_name).CharColor
-# else:
-#     kinovar_color = 0
+def get_current_component():
+    _ctx = uno.getComponentContext()
+    _smgr = _ctx.getServiceManager()
+    _desktop = _smgr.createInstanceWithContext('com.sun.star.frame.Desktop', _ctx)
+    _doc = _desktop.getCurrentComponent()
+    if _doc:
+        return _doc
+
+
+def get_pages_abs_count():
+    view_data = save_pos()
+
+    _count: int = 1
+    view_cursor = doc.getCurrentController().getViewCursor()
+    view_cursor.jumpToFirstPage()
+    while view_cursor.jumpToNextPage():
+        _count += 1
+
+    restore_pos_from(view_data)
+
+    return _count
+
+
+doc = get_current_component()
 
 
 def MsgBox(message, title=''):
@@ -67,12 +73,20 @@ def MsgBox(message, title=''):
     return None
 
 
+class Bound:
+    Start = 'start'
+    End = 'end'
+    NextStart = 'next_start'
+    NextEnd = 'next_end'
+    StartSentence = 'start_sentence'
+
+
 class Frame:
     # Frame - вспомогательный класс,
     # обертка над frame из OO (Frame.frame_obj)
 
     def __new__(cls, page):
-        frame_name = frame_prefix + str(page)
+        frame_name = FRAME_PREFIX + str(page)
         frames = doc.getTextFrames()
         # объект создается только при наличии врезки на странице
         if frames.hasByName(frame_name):
@@ -82,12 +96,15 @@ class Frame:
             return None
 
     def __init__(self, page):
-        frame_name = frame_prefix + str(page)
+        frame_name = FRAME_PREFIX + str(page)
         frames = doc.getTextFrames()
 
         self.name = frame_name
         self.page = page
-        self.frame_obj = frames.getByName(frame_name)
+        try:
+            self.frame_obj = frames.getByName(frame_name)
+        except:
+            pass
 
         self.protected = self.is_protected()
         self.string = self.get_string()
@@ -121,11 +138,11 @@ class Frame:
 
     def protect(self):
         self.frame_obj.ContentProtected = True
-        MsgBox('Содержимое врезки на стр.{} защищено'.format(self.page))
+        MsgBox(f'Содержимое врезки на стр.{self.page} защищено')
 
     def unprotect(self):
         self.frame_obj.ContentProtected = False
-        MsgBox('Содержимое врезки на стр.{} разблокировано'.format(self.page))
+        MsgBox(f'Содержимое врезки на стр.{self.page} разблокировано')
 
     def update_only_current(self):
         # Если это не последня страница
@@ -134,13 +151,16 @@ class Frame:
 
 
 def Mri_test():
-    ctx = context.getComponentContext()
-    document = context.getDocument()
-    mri(ctx, document)
+    # ctx = context.getComponentContext()
+    ctx = uno.getComponentContext()
+    # doc = context.getDocument()
+    # doc = get_current_component()
+    mri(ctx, doc)
 
 
 def Mri(target):
-    ctx = context.getComponentContext()
+    # ctx = context.getComponentContext()
+    ctx = uno.getComponentContext()
     _mri = ctx.ServiceManager.createInstanceWithContext(
         "mytools.Mri", ctx)
     _mri.inspect(target)
@@ -152,23 +172,18 @@ def mri(ctx, target):
     _mri.inspect(target)
 
 
-def get_page(_doc):
-    return _doc.getCurrentController().getViewCursor().getPage()
+def get_current_page_number():
+    return doc.getCurrentController().getViewCursor().getPage()
 
 
 def remove_all(*args):
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     view_data = save_pos()
     remove_first_words_frames()
     restore_pos_from(view_data)
 
 
 def update_all(*args):
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     view_data = save_pos()
-    # remove_first_words_frames()
     insert_frames_to_pages()
     restore_pos_from(view_data)
 
@@ -178,8 +193,6 @@ def insert_fw_to_doc(*args):
 
     :return
     """
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     # Если нет стиля врезки, создать.
     check_and_create_styles()
 
@@ -195,9 +208,9 @@ def insert_frames_to_pages(start_page=2, one_page_flag=False):
     """Вставляет в каждую страницу документа фрейм (и заполняет его).
 
     :param start_page: начальная страница для обработки. По умолчанию, начиная со второй.
-    :param one_page_flag: флаг обработки только текущей страницы
+    :param one_page_flag: флаг обработки только текущей страницы.
     """
-
+    n_pages = get_pages_abs_count()
     if one_page_flag:
         end_page = start_page + 1
     else:
@@ -238,9 +251,9 @@ def insert_frames_to_pages(start_page=2, one_page_flag=False):
 def make_all_frames_in(pages_positions, _page=0):
     """Создать (или получить имеющиеся) врезки
 
-    :param pages_positions: список кортежей позиций начала и конца страницы
+    :param pages_positions: список кортежей позиций начала и конца страницы.
     :param _page: номер страницы, с которой начинать счет.
-    :return: список врезок
+    :return: список врезок.
     """
     out_frames = []
     # для всех концов страниц (кроме последней),
@@ -281,8 +294,8 @@ def get_fist_word_from_one(cursor):
     """
     Из курсора с текстом страницы выбирает первое слово (или два)
 
-    :param cursor: курсор с текстом
-    :return: курсор с первым словом (или пустой)
+    :param cursor: курсор с текстом.
+    :return: курсор с первым словом (или пустой).
     """
     if cursor:
         # Текстовый курсор, который захватит слово с форматом.
@@ -298,7 +311,7 @@ def get_fist_word_from_one(cursor):
         # то не работает граница слова.
         page_text = re.sub(r'^«', 'Ѣ', page_text)
 
-        start_sentence_pos = bound_handler(page_text, 'start_sentence')
+        start_sentence_pos = bound_handler(page_text, Bound.StartSentence)
         # Если нашлось предложение (не факт, что далее будет именно слово)
         if start_sentence_pos >= 0:
             # Двигаться по тексту, пока не найдется конец слова (первого)
@@ -312,7 +325,7 @@ def get_fist_word_from_one(cursor):
                 first_word_end_pos = get_bound_end_pos(page_text, tmp_position)
                 first_word_start_pos = get_bound_start_pos(page_text, tmp_position)
                 second_word_start_pos = get_next_bound_start_pos(page_text, tmp_position)
-                start_sentence_pos = bound_handler(page_text, 'start_sentence', tmp_position)
+                start_sentence_pos = bound_handler(page_text, Bound.StartSentence, tmp_position)
                 tmp_position = second_word_start_pos
 
                 # MsgBox(
@@ -396,7 +409,7 @@ def get_start_end_positions_of(page: int):
     return start_pos, end_pos
 
 
-def bound_handler(string: str, bound_type='', start_position=0) -> int:
+def bound_handler(string: str, bound_type: str = None, start_position=0) -> int:
     """Работа с границами цся Unicode-словами в локали "cu".
 
     Обычным способом (goToEndOfWord) некорректно определяется верхняя граница ЦСЯ слова,
@@ -426,11 +439,11 @@ def bound_handler(string: str, bound_type='', start_position=0) -> int:
     start_of_sentence = brk.beginOfSentence(string, start_position, a_locale)
 
     bound_dic = {
-        'start': firstwd_bound.startPos,
-        'end': firstwd_bound.endPos,
-        'next_start': nextwd_bound.startPos,
-        'next_end': nextwd_bound.endPos,
-        'start_sentence': start_of_sentence,
+        Bound.Start: firstwd_bound.startPos,
+        Bound.End: firstwd_bound.endPos,
+        Bound.NextStart: nextwd_bound.startPos,
+        Bound.NextEnd: nextwd_bound.endPos,
+        Bound.StartSentence: start_of_sentence,
     }
 
     return bound_dic.get(bound_type, -1)
@@ -438,22 +451,22 @@ def bound_handler(string: str, bound_type='', start_position=0) -> int:
 
 def get_bound_start_pos(string: str, pos=0) -> int:
     # возвращает позицию нижней границы первого слова в строке
-    return bound_handler(string, 'start', pos)
+    return bound_handler(string, Bound.Start, pos)
 
 
 def get_bound_end_pos(string, pos=0) -> int:
     # возвращает позицию верхней границы первого слова в строке
-    return bound_handler(string, 'end', pos)
+    return bound_handler(string, Bound.End, pos)
 
 
 def get_next_bound_start_pos(string, pos=0) -> int:
     # возвращает позицию нижней границы второго слова в строке
-    return bound_handler(string, 'next_start', pos)
+    return bound_handler(string, Bound.NextStart, pos)
 
 
 def get_next_bound_end_pos(string, pos=0) -> int:
     # возвращает позицию верхней границы второго слова в строке
-    return bound_handler(string, 'next_end', pos)
+    return bound_handler(string, Bound.NextEnd, pos)
 
 
 def make_frame_in_position(page, end_of_page):
@@ -464,7 +477,7 @@ def make_frame_in_position(page, end_of_page):
     :return: врезка (TextFrame)
     """
 
-    frame_name = frame_prefix + str(page)
+    frame_name = FRAME_PREFIX + str(page)
     # проверка на сущ-е фрейма
     frames_in_doc = doc.getTextFrames()
     if frames_in_doc.hasByName(frame_name):
@@ -473,7 +486,7 @@ def make_frame_in_position(page, end_of_page):
         # создание фрейма, если его нет
         frame = doc.createInstance("com.sun.star.text.TextFrame")
         frame.AnchorType = 2  # тип привязки
-        frame.FrameStyleName = frame_style_name  # настроенный стиль
+        frame.FrameStyleName = FRAME_STYLE_NAME  # настроенный стиль
         frame.Name = frame_name
         frame.WidthType = 2  # 2 - auto-width
         frame.AnchorPageNo = page  # точное указание страницы для врезки.
@@ -492,8 +505,8 @@ def fill_frame(frame, fw_cursor):
     """
     Вставляет во врезку текст из курсора вместе с форматом (цвет и возможно жирность).
 
-    :param frame: врезка
-    :param fw_cursor: курсор с первым словом
+    :param frame: врезка.
+    :param fw_cursor: курсор с первым словом.
     :return:
     """
 
@@ -502,17 +515,17 @@ def fill_frame(frame, fw_cursor):
     # В дальнейшем, если он не красный (в стиле для ч/б печати),
     # будет учитываться "жирность" при вставке текста во врезку.
     kinovar_color = 0
-    if char_styles.hasByName(char_style_name):
-        kinovar_color = char_styles.getByName(char_style_name).CharColor
+    if char_styles.hasByName(CHAR_STYLE_NAME):
+        kinovar_color = char_styles.getByName(CHAR_STYLE_NAME).CharColor
 
     # Очистка текста фрейма, т.к. запись нужна
-    # либо в новый, либо в устаревший фрейм
+    # либо в новый, либо в устаревший фрейм.
     frame.String = ""
 
     # временный курсор -> во врезку
     tmp_cursor = frame.createTextCursorByRange(frame.getStart())
     # применить абзацный стиль для содержимого врезки
-    tmp_cursor.ParaStyleName = frame_paragaph_style_name
+    tmp_cursor.ParaStyleName = FRAME_PARAGAPH_STYLE_NAME
 
     # Структура для сохранения форматирования
     char_props = (
@@ -520,7 +533,7 @@ def fill_frame(frame, fw_cursor):
         uno.createUnoStruct("com.sun.star.beans.PropertyValue")
     )
 
-    # Получить текст и формат для всех порций текста, и вставить во врезку
+    # Получить текст и формат для всех порций текста, и вставить во врезку.
     word_enum = fw_cursor.createEnumeration()  # SwXParagraphEnumeration
     while word_enum.hasMoreElements():
         word = word_enum.nextElement()  # SwXParagraph
@@ -531,7 +544,9 @@ def fill_frame(frame, fw_cursor):
             char_props[0].Name = "CharColor"
             char_props[0].Value = part_of_word.CharColor
             char_props[1].Name = "CharWeight"
-            # если есть стиль для цветной печати, то жирность не нужна
+            # TODO: оперировать символьными стилями, если есть. Если нет то как обычно
+            #  если есть стиль для цветной печати, то жирность не нужна
+            #  if kinovar_color in [-1, 0]:
             if kinovar_color == 0:
                 char_props[1].Value = part_of_word.CharWeight  # если нужен bold
             else:
@@ -553,16 +568,15 @@ def check_and_create_styles():
     Далее эти стили можно настроить под свои нужды
 
     """
-
     style_families = doc.getStyleFamilies()
     frame_styles = style_families.getByName("FrameStyles")
     para_styles = style_families.getByName("ParagraphStyles")
 
     # Проверка, если нет стиля для врезки, создать
-    if not frame_styles.hasByName(frame_style_name):
+    if not frame_styles.hasByName(FRAME_STYLE_NAME):
         MsgBox('Нет настроенного стиля врезки. Создаем.')
         new_frame_style = doc.createInstance("com.sun.star.style.FrameStyle")
-        new_frame_style.setName(frame_style_name)
+        new_frame_style.setName(FRAME_STYLE_NAME)
         new_frame_style.AnchorType = 2  # AT_PAGE
         new_frame_style.BorderDistance = 0
         new_frame_style.BottomBorderDistance = 0
@@ -584,17 +598,17 @@ def check_and_create_styles():
         new_frame_style.VertOrientRelation = 7
         new_frame_style.WidthType = 2
 
-        frame_styles.insertByName(frame_style_name, new_frame_style)
-        if frame_styles.hasByName(frame_style_name):
-            frame_styles.getByName(frame_style_name).ParentStyle = 'Frame'
-            MsgBox('Cтиль врезки:\n"{}"\nсоздан.'.format(frame_style_name))
+        frame_styles.insertByName(FRAME_STYLE_NAME, new_frame_style)
+        if frame_styles.hasByName(FRAME_STYLE_NAME):
+            frame_styles.getByName(FRAME_STYLE_NAME).ParentStyle = 'Frame'
+            MsgBox('Cтиль врезки:\n"{}"\nсоздан.'.format(FRAME_STYLE_NAME))
 
     # Проверка, если нет стиля для содержимого врезки, создать
-    if not para_styles.hasByName(frame_paragaph_style_name):
+    if not para_styles.hasByName(FRAME_PARAGAPH_STYLE_NAME):
         MsgBox('Нет настроенного стиля для содержимого врезки. Создаем.')
         new_para_style = doc.createInstance("com.sun.star.style.ParagraphStyle")
 
-        new_para_style.setName(frame_paragaph_style_name)
+        new_para_style.setName(FRAME_PARAGAPH_STYLE_NAME)
         new_para_style.ParaAdjust = 1
         new_para_style.CharNoHyphenation = 'True'
         # new_para_style.ParaHyphenationMaxHyphens = 3
@@ -603,11 +617,11 @@ def check_and_create_styles():
         new_para_style.ParaOrphans = 0
         new_para_style.ParaWidows = 0
 
-        para_styles.insertByName(frame_paragaph_style_name, new_para_style)
+        para_styles.insertByName(FRAME_PARAGAPH_STYLE_NAME, new_para_style)
 
-        if para_styles.hasByName(frame_paragaph_style_name):
-            para_styles.getByName(frame_paragaph_style_name).ParentStyle = "Frame contents"
-            MsgBox('Cтиль абзаца для содержимого врезки:\n"{}"\nсоздан.'.format(frame_paragaph_style_name))
+        if para_styles.hasByName(FRAME_PARAGAPH_STYLE_NAME):
+            para_styles.getByName(FRAME_PARAGAPH_STYLE_NAME).ParentStyle = "Frame contents"
+            MsgBox('Стиль абзаца для содержимого врезки:\n"{}"\nсоздан.'.format(FRAME_PARAGAPH_STYLE_NAME))
 
 
 def remove_first_words_frames():
@@ -617,8 +631,11 @@ def remove_first_words_frames():
     frame_names = all_frames.getElementNames()
     for name in frame_names:
         # удалить все врезки вида "frame_prefix_page"
-        if name.startswith(frame_prefix):
-            all_frames.getByName(name).dispose()
+        if name.startswith(FRAME_PREFIX):
+            try:
+                all_frames.getByName(name).dispose()
+            except:
+                pass
 
 
 def save_pos():
@@ -633,20 +650,15 @@ def restore_pos_from(saved_view_data):
 
 
 def update_current_frame(*args):
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
     # Очищает врезку на текущей странице
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.update_only_current()
 
 
 def clear_current_frame(*args):
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-    # Очищает врезку на текущей странице
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.clear()
@@ -654,9 +666,7 @@ def clear_current_frame(*args):
 
 def delete_current_frame(*args):
     # Удаляет врезку на текущей странице
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.delete()
@@ -664,9 +674,7 @@ def delete_current_frame(*args):
 
 def up_current_frame(*args):
     # поднять врезку на 0.05
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.move_up()
@@ -674,9 +682,7 @@ def up_current_frame(*args):
 
 def down_current_frame(*args):
     # опустить врезку на 0.05
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.move_down()
@@ -684,9 +690,7 @@ def down_current_frame(*args):
 
 def protect_current_frame(*args):
     # Защитить содержимое врезки
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.protect()
@@ -694,9 +698,7 @@ def protect_current_frame(*args):
 
 def unprotect_current_frame(*args):
     # Убрать защиту содержимого врезки
-    global doc
-    doc = XSCRIPTCONTEXT.getDesktop().getCurrentComponent()
-    page = get_page(doc)
+    page = get_current_page_number()
     frame = Frame(page)
     if frame:
         frame.unprotect()
